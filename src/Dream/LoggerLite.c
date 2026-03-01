@@ -5,7 +5,7 @@
 #include <threads.h>
 #ifndef REMOVE_DREAM_LOGGER
 
-#include "Logger.h"
+#include <Dream/LoggerLite.h>
 
 #include <stdarg.h>
 #include <stdint.h>
@@ -456,7 +456,7 @@ void DreamLoggerInit(const DreamLoggerConfig *config) {
                 }
                 break;
             }
-            case DREAM_LOG_SINK_CALLBACK: {
+            case DREAM_LOG_SINK_USER_CALLBACK: {
                 g_logger.callback           = config->callback;
                 g_logger.callback_user_data = config->callback_user_data;
                 sink->__write               = _dream_sink_callback_write;

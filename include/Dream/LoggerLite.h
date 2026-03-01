@@ -1,9 +1,13 @@
-#ifndef DREAM_INTERNAL_LOGGER
-#define DREAM_INTERNAL_LOGGER
+#ifndef DREAM_LOGGER_LITE
+#define DREAM_LOGGER_LITE
 
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef enum DreamLogLevel {
     DREAM_LOG_TRACE,
@@ -15,11 +19,11 @@ typedef enum DreamLogLevel {
 } DreamLogLevel;
 
 typedef enum DreamLoggerSinkTo {
-    DREAM_LOG_SINK_STDOUT      = 1 << 0,
-    DREAM_LOG_SINK_STDERR      = 1 << 1,
-    DREAM_LOG_SINK_FILE        = 1 << 2,
-    DREAM_LOG_SINK_RING_BUFFER = 1 << 3,
-    DREAM_LOG_SINK_CALLBACK    = 1 << 4,
+    DREAM_LOG_SINK_STDOUT        = 1 << 0,
+    DREAM_LOG_SINK_STDERR        = 1 << 1,
+    DREAM_LOG_SINK_FILE          = 1 << 2,
+    DREAM_LOG_SINK_RING_BUFFER   = 1 << 3,
+    DREAM_LOG_SINK_USER_CALLBACK = 1 << 4,
 } DreamLoggerSinkTo;
 
 // typedef enum DreamLogFormatTokens {
@@ -102,4 +106,8 @@ void DreamLoggerDumpRingBuffer(FILE *out);
 #define dFatal(tag, ...)    ((void)0)
 #endif // !REMOVE_DREAM_LOGGER
 
-#endif // !DREAM_INTERNAL_LOGGER
+#ifdef __cplusplus
+}
+#endif
+
+#endif // !DREAM_LOGGER_LITE

@@ -4,74 +4,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
+typedef struct DreamLoggerConfig DreamLoggerConfig;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-typedef enum DreamLogLevel {
-    DREAM_LOG_TRACE,
-    DREAM_LOG_INFO,
-    DREAM_LOG_DEBUG,
-    DREAM_LOG_WARNING,
-    DREAM_LOG_CRITICAL,
-    DREAM_LOG_FATAL,
-} DreamLogLevel;
-
-typedef enum DreamLoggerSinkTo {
-    DREAM_LOG_SINK_STDOUT      = 1 << 0,
-    DREAM_LOG_SINK_STDERR      = 1 << 1,
-    DREAM_LOG_SINK_FILE        = 1 << 2,
-    DREAM_LOG_SINK_RING_BUFFER = 1 << 3,
-    DREAM_LOG_SINK_CALLBACK    = 1 << 4,
-} DreamLoggerSinkTo;
-
-typedef struct DreamLoggerSink DreamLoggerSink;
-typedef struct DreamLogMsg DreamLogMsg;
-typedef void (*DreamSinkWriteFn)(DreamLoggerSink *sink, const DreamLogMsg *log);
-struct DreamLoggerSink {
-    DreamLoggerSinkTo sink_into;
-    DreamLogLevel min_level;
-    // DreamLogFormatTokens format[4];
-    DreamSinkWriteFn __write;
-};
-
-typedef enum DreamLogAsyncOverflowPolicy {
-    BLOCK,
-    DROP_OLDEST,
-    DROP_NEWEST,
-} DreamLogAsyncOverflowPolicy;
-
-typedef void (*DreamLogCallbackFn)(
-    DreamLogLevel level,
-    const char *category,
-    const char *message,
-    const char *formatted_line,
-    void *user_data
-);
-
-typedef uint8_t DreamLogSinksBitmask;
-
-typedef struct DreamLoggerConfig {
-    bool enabled;
-    bool use_color;
-    bool use_emoji;
-    bool show_time;
-    bool show_thread;
-    DreamLogLevel global_min_log_level;
-    DreamLoggerSink **sinks;
-    uint16_t sink_count;
-    const char *logfile_path;
-
-    uint32_t ring_buffer_lines;
-    uint32_t ring_buffer_line_len;
-
-    DreamLogCallbackFn callback;
-    void *callback_user_data;
-
-    bool async;
-    size_t async_queue_capacity; // no of DreamLogMsg elements
-    DreamLogAsyncOverflowPolicy async_log_overflow_policy;
-} DreamLoggerConfig;
 
 typedef void *(*DreamUserAllocFn)(
     size_t size, size_t alignment, void *user_data
