@@ -34,11 +34,11 @@ typedef struct DreamLogMsg {
     char message[DREAM_LOG_MAX_MESSAGE];
 } DreamLogMsg;
 
-typedef struct DLMRingBuffer {
+typedef struct DreamAsyncRingBuffer {
     DreamLogMsg *buffer;
     _Atomic size_t head;
     _Atomic size_t tail;
-} DLMRingBuffer;
+} DreamAsyncRingBuffer;
 
 typedef struct DreamRingBuffer {
     bool initialized;
@@ -66,7 +66,7 @@ typedef struct DreamLoggerState {
     void *callback_user_data;
 
     bool async_enabled;
-    DLMRingBuffer async_ringbuff;
+    DreamAsyncRingBuffer async_ringbuff;
     size_t async_queue_capacity; // no of DreamLogMsg elements
     DreamLogAsyncOverflowPolicy async_log_overflow_policy;
 
@@ -83,7 +83,7 @@ typedef struct DreamLoggerState {
 
 static DreamLoggerState g_logger;
 
-static const char *dream_log_level_string(DreamLogLevel level) {
+static const char *_dream_log_level_string(DreamLogLevel level) {
     switch (level) {
         case DREAM_LOG_TRACE:    return "TRACE";
         case DREAM_LOG_DEBUG:    return "DEBUG";
@@ -97,7 +97,7 @@ static const char *dream_log_level_string(DreamLogLevel level) {
 
 #if defined(DREAM_PLATFORM_WIN32)
 
-static WORD dream_log_level_color(DreamLogLevel level) {
+static WORD __dream_log_level_color(DreamLogLevel level) {
     switch (level) {
         case DREAM_LOG_TRACE: return FOREGROUND_INTENSITY;
         case DREAM_LOG_DEBUG:
@@ -112,19 +112,21 @@ static WORD dream_log_level_color(DreamLogLevel level) {
     }
 }
 
-static void dream_set_color(DreamLogLevel level) {
+static void _dream_set_color(DreamLogLevel level) {
     if (!g_logger.use_color) return;
-    SetConsoleTextAttribute(g_logger.console, dream_log_level_color(level));
+    SetConsoleTextAttribute(g_logger.console, __dream_log_level_color(level));
 }
 
-static void dream_reset_color(void) {
+static void _dream_reset_color(void) {
     if (!g_logger.use_color) return;
     SetConsoleTextAttribute(g_logger.console, g_logger.default_attributes);
 }
 
-static uint32_t dream_thread_id(void) { return (uint32_t)GetCurrentThreadId(); }
+static uint32_t _dream_thread_id(void) {
+    return (uint32_t)GetCurrentThreadId();
+}
 
-static void dream_time_string(char *out, size_t size) {
+static void _dream_time_string(char *out, size_t size) {
     SYSTEMTIME t;
     GetLocalTime(&t);
     snprintf(
@@ -140,7 +142,7 @@ static void dream_time_string(char *out, size_t size) {
 
 #else /* POSIX */
 
-static const char *dream_log_level_color_ansi(DreamLogLevel level) {
+static const char *__dream_log_level_color_ansi(DreamLogLevel level) {
     switch (level) {
         case DREAM_LOG_TRACE:    return "\033[90m";
         case DREAM_LOG_DEBUG:    return "\033[36m";
@@ -152,19 +154,19 @@ static const char *dream_log_level_color_ansi(DreamLogLevel level) {
     }
 }
 
-static void dream_set_color(DreamLogLevel level) {
-    if (g_logger.use_color) fputs(dream_log_level_color_ansi(level), stdout);
+static void _dream_set_color(DreamLogLevel level) {
+    if (g_logger.use_color) fputs(__dream_log_level_color_ansi(level), stdout);
 }
 
-static void dream_reset_color(void) {
+static void _dream_reset_color(void) {
     if (g_logger.use_color) fputs("\033[0m", stdout);
 }
 
-static uint32_t dream_thread_id(void) {
+static uint32_t _dream_thread_id(void) {
     return (uint32_t)(uintptr_t)pthread_self();
 }
 
-static void dream_time_string(char *out, size_t size) {
+static void _dream_time_string(char *out, size_t size) {
     struct timeval tv;
     gettimeofday(&tv, NULL);
 
@@ -182,7 +184,26 @@ static void dream_time_string(char *out, size_t size) {
     );
 }
 
-static int DreamAsyncWorkerFn(void *args) {
+#endif // !DREAM_PLATFORM_WIN32
+
+static void _dream_write_stdout(const char *text) {
+    fputs(text, stdout);
+    fflush(stdout);
+}
+
+static void _dream_write_stderr(const char *text) {
+    fputs(text, stderr);
+    fflush(stderr);
+}
+
+static void _dream_write_file(const char *text) {
+    if (g_logger.logfile) {
+        fputs(text, g_logger.logfile);
+        fflush(g_logger.logfile);
+    }
+}
+
+static int _dream_async_worker_fn(void *args) {
     for (;;) {
         size_t head = atomic_load_explicit(
             &g_logger.async_ringbuff.head, memory_order_acquire
@@ -232,24 +253,7 @@ static int DreamAsyncWorkerFn(void *args) {
     return 0;
 }
 
-static void dream_write_stdout(const char *text) {
-    fputs(text, stdout);
-    fflush(stdout);
-}
-
-static void dream_write_stderr(const char *text) {
-    fputs(text, stderr);
-    fflush(stderr);
-}
-
-static void dream_write_file(const char *text) {
-    if (g_logger.logfile) {
-        fputs(text, g_logger.logfile);
-        fflush(g_logger.logfile);
-    }
-}
-
-static bool dream_async_push(const DreamLogMsg *log) {
+static bool _dream_async_push(const DreamLogMsg *log) {
     size_t tail = atomic_fetch_add_explicit(
         &g_logger.async_ringbuff.tail, 1, memory_order_acq_rel
     );
@@ -292,7 +296,7 @@ static bool dream_async_push(const DreamLogMsg *log) {
     return true;
 }
 
-static void dream_ring_buffer_push(const char *line) {
+static void _dream_ring_buffer_push(const char *line) {
     DreamRingBuffer *r = &g_logger.ring;
 
     if (!r->buffer) return;
@@ -311,7 +315,7 @@ static void __get_formatted_log(
     char time_buf[32] = {0};
 
     if (g_logger.show_time) {
-        dream_time_string(time_buf, sizeof(time_buf));
+        _dream_time_string(time_buf, sizeof(time_buf));
     }
 
     int offset = 0;
@@ -328,7 +332,7 @@ static void __get_formatted_log(
         output_buffer + offset,
         output_buffer_size - offset,
         "[%s] ",
-        dream_log_level_string(log->level)
+        _dream_log_level_string(log->level)
     );
 
     offset += snprintf(
@@ -343,7 +347,7 @@ static void __get_formatted_log(
             output_buffer + offset,
             output_buffer_size - offset,
             "[T:%u] ",
-            dream_thread_id()
+            _dream_thread_id()
         );
 
     snprintf(
@@ -358,29 +362,29 @@ static void
 _dream_sink_stdout_write(DreamLoggerSink *this, const DreamLogMsg *log) {
     char formatted_line[1400];
     __get_formatted_log(log, formatted_line, sizeof(formatted_line));
-    dream_set_color(log->level);
-    dream_write_stdout(formatted_line);
-    dream_reset_color();
+    _dream_set_color(log->level);
+    _dream_write_stdout(formatted_line);
+    _dream_reset_color();
 }
 static void
 _dream_sink_stderr_write(DreamLoggerSink *this, const DreamLogMsg *log) {
     char formatted_line[1400];
     __get_formatted_log(log, formatted_line, sizeof(formatted_line));
-    dream_set_color(log->level);
-    dream_write_stdout(formatted_line);
-    dream_reset_color();
+    _dream_set_color(log->level);
+    _dream_write_stdout(formatted_line);
+    _dream_reset_color();
 }
 static void
 _dream_sink_file_write(DreamLoggerSink *this, const DreamLogMsg *log) {
     char formatted_line[1400];
     __get_formatted_log(log, formatted_line, sizeof(formatted_line));
-    dream_write_file(formatted_line);
+    _dream_write_file(formatted_line);
 }
 static void
 _dream_sink_ringbuff_write(DreamLoggerSink *this, const DreamLogMsg *log) {
     char formatted_line[1400];
     __get_formatted_log(log, formatted_line, sizeof(formatted_line));
-    dream_ring_buffer_push(formatted_line);
+    _dream_ring_buffer_push(formatted_line);
 }
 static void
 _dream_sink_callback_write(DreamLoggerSink *this, const DreamLogMsg *log) {
@@ -470,14 +474,15 @@ void DreamLoggerInit(const DreamLoggerConfig *config) {
         g_logger.async_enabled             = true;
         g_logger.async_log_overflow_policy = config->async_log_overflow_policy;
         g_logger.async_queue_capacity      = config->async_queue_capacity;
-        g_logger.async_ringbuff.buffer =
-            malloc(sizeof(DLMRingBuffer) * g_logger.async_queue_capacity);
+        g_logger.async_ringbuff.buffer     = malloc(
+            sizeof(DreamAsyncRingBuffer) * g_logger.async_queue_capacity
+        );
         atomic_init(&g_logger.async_ringbuff.head, 0);
         atomic_init(&g_logger.async_ringbuff.tail, 0);
         mtx_init(&g_logger.sleep_mutex, mtx_plain);
         cnd_init(&g_logger.sleep_cond);
         atomic_store(&g_logger.async_thread_running, true);
-        thrd_create(&g_logger.async_worker, DreamAsyncWorkerFn, nullptr);
+        thrd_create(&g_logger.async_worker, _dream_async_worker_fn, nullptr);
     }
 }
 
@@ -515,7 +520,7 @@ void DreamLog(DreamLogLevel level, const char *category, const char *fmt, ...) {
 
     DreamLogMsg log;
     log.level     = level;
-    log.threadid  = dream_thread_id();
+    log.threadid  = _dream_thread_id();
     log.pid       = 0; // do later
     log.timestamp = 0; // do later
     snprintf(log.category, sizeof(log.category), "%s", category);
@@ -525,7 +530,7 @@ void DreamLog(DreamLogLevel level, const char *category, const char *fmt, ...) {
     va_end(args);
 
     if (g_logger.async_enabled) {
-        dream_async_push(&log);
+        _dream_async_push(&log);
     } else {
         // synchronous dispatch
         for (size_t i = 0; i < g_logger.sink_count; ++i) {
@@ -567,7 +572,5 @@ void DreamLoggerDumpRingBuffer(FILE *out) {
     fprintf(out, "--------------------------------------------\n");
     fflush(out);
 }
-
-#endif
 
 #endif // !REMOVE_DREAM_LOGGER
