@@ -1,5 +1,11 @@
 #!/usr/bin/env sh
 
+git submodule update --init --recursive
+
+mkdir build
+
+python setup.py
+
 # BUILD_TYPE=Debug
 BUILD_TYPE=Release
 
